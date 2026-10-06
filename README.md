@@ -23,7 +23,7 @@ cd backend
 python -m venv keeper
 source keeper/bin/activate
 pip install -r requirements.txt
-python manage.py migra
+python manage.py migrate
 python manage.py runserver
 ```
 
