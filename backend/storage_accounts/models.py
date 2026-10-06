@@ -5,6 +5,7 @@ from storage_accounts.fields import EncryptedTextField
 class StorageAccount(models.Model):
     class Provider(models.TextChoices):
         R2 = 'r2', 'Cloudflare R2'
+        MINIO = 'minio', 'MinIO'
 
     owner = models.ForeignKey(
         'accounts.User',
@@ -17,7 +18,8 @@ class StorageAccount(models.Model):
         choices=Provider.choices,
         default=Provider.R2,
     )
-    account_id = EncryptedTextField()
+    account_id = EncryptedTextField(null=True, blank=True)
+    endpoint_url = EncryptedTextField(null=True, blank=True)
     access_key_id = EncryptedTextField()
     secret_access_key = EncryptedTextField()
     bucket_name = models.CharField(max_length=255)
