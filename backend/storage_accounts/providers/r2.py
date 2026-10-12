@@ -39,6 +39,16 @@ class R2Provider(StorageProvider):
             ExpiresIn=expires_in,
         )
 
+    def head_object(self, object_key):
+        result = self.client.head_object(
+            Bucket=self.storage_account.bucket_name,
+            Key=object_key,
+        )
+        return {
+            'size': result['ContentLength'],
+            'content_type': result.get('ContentType'),
+        }
+
     def list_objects(self, prefix):
         return self.client.list_objects_v2(
             Bucket=self.storage_account.bucket_name,
