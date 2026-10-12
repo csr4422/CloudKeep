@@ -11,6 +11,10 @@ class StorageProvider(ABC):
         """Return a presigned URL for downloading an object."""
 
     @abstractmethod
+    def head_object(self, object_key):
+        """Return an object's size and content type, raising if it is missing."""
+
+    @abstractmethod
     def list_objects(self, prefix):
         """Return objects whose keys begin with prefix."""
 
