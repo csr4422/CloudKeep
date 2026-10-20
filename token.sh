@@ -7,12 +7,14 @@ _cloudkeep_load_token() {
     local access
 
     if [[ -z "$user" ]]; then
-        read -r -p "CloudKeep username: " user || return 1
+        printf 'CloudKeep username: ' >&2
+        read -r user || return 1
     fi
 
     if [[ -z "$pass" ]]; then
-        read -r -s -p "CloudKeep password: " pass || return 1
-        printf '\n'
+        printf 'CloudKeep password: ' >&2
+        read -r -s pass || return 1
+        printf '\n' >&2
     fi
 
     if ! response=$(curl --silent --show-error --fail-with-body \
