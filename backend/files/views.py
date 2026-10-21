@@ -1,17 +1,140 @@
 import logging
 from uuid import uuid4
 
-from rest_framework import permissions, status
+from django.db import transaction
+from rest_framework import filters, mixins, permissions, status, viewsets
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from files.models import File
-from files.serializers import CompleteUploadSerializer, UploadURLRequestSerializer
+from files.models import File, Folder
+from files.serializers import (
+    CompleteUploadSerializer,
+    FileSerializer,
+    FolderSerializer,
+    UploadURLRequestSerializer,
+)
 from storage_accounts.providers.factory import get_provider
 
 
 logger = logging.getLogger(__name__)
 URL_EXPIRATION_SECONDS = 3600
+
+
+class FilePagination(PageNumberPagination):
+    page_size = 50
+
+
+class FolderViewSet(viewsets.ModelViewSet):
+    serializer_class = FolderSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get_queryset(self):
+        queryset = Folder.objects.filter(owner=self.request.user).select_related(
+            'parent', 'storage_account'
+        )
+        storage_account = self.request.query_params.get('storage_account')
+        parent = self.request.query_params.get('parent')
+        if storage_account is not None:
+            queryset = queryset.filter(storage_account_id=storage_account)
+        if parent == 'root':
+            queryset = queryset.filter(parent__isnull=True)
+        elif parent is not None:
+            queryset = queryset.filter(parent_id=parent)
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        folder = self.get_object()
+        folders = [folder]
+        descendant_ids = {folder.pk}
+        offset = 0
+        while offset < len(folders):
+            current = folders[offset]
+            offset += 1
+            children = list(
+                Folder.objects.filter(
+                    owner=request.user, storage_account_id=folder.storage_account_id,
+                    parent_id=current.pk,
+                )
+            )
+            folders.extend(child for child in children if child.pk not in descendant_ids)
+            descendant_ids.update(child.pk for child in children)
+
+        files = list(
+            File.objects.filter(
+                owner=request.user, folder_id__in=descendant_ids
+            ).select_related('storage_account')
+        )
+        try:
+            for file in files:
+                get_provider(file.storage_account).delete_object(file.object_key)
+        except Exception:
+            logger.warning(
+                'Folder object deletion failed for folder %s', folder.pk, exc_info=True
+            )
+            return Response(
+                {'detail': 'Unable to delete folder contents.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            folder.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class FileViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = FileSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+    pagination_class = FilePagination
+    filter_backends = (filters.SearchFilter, filters.OrderingFilter)
+    search_fields = ('name',)
+    ordering_fields = ('name', 'size_bytes', 'uploaded_at')
+    http_method_names = ('get', 'patch', 'delete', 'head', 'options')
+
+    def get_queryset(self):
+        queryset = File.objects.filter(owner=self.request.user).select_related(
+            'folder', 'storage_account'
+        )
+        storage_account = self.request.query_params.get('storage_account')
+        folder = self.request.query_params.get('folder')
+        if storage_account is not None:
+            queryset = queryset.filter(storage_account_id=storage_account)
+        if folder == 'root':
+            queryset = queryset.filter(folder__isnull=True)
+        elif folder is not None:
+            queryset = queryset.filter(folder_id=folder)
+        return queryset
+
+    def partial_update(self, request, *args, **kwargs):
+        # Keep PATCH limited to the two mutable fields, even if a client sends extra data.
+        serializer = self.get_serializer(
+            self.get_object(), data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        file = self.get_object()
+        try:
+            get_provider(file.storage_account).delete_object(file.object_key)
+        except Exception:
+            logger.warning('File object deletion failed for file %s', file.pk, exc_info=True)
+            return Response(
+                {'detail': 'Unable to delete file.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        file.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class UploadURLView(APIView):
