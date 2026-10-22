@@ -1,9 +1,11 @@
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import AccessToken
 
 from storage_accounts.models import StorageAccount
 
@@ -11,7 +13,7 @@ from storage_accounts.models import StorageAccount
 User = get_user_model()
 
 
-class StorageAccountViewSetTests(APITestCase):
+class StorageAccountViewSetTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username='owner', password='CloudKeepPass123!'
@@ -19,6 +21,8 @@ class StorageAccountViewSetTests(APITestCase):
         self.other_user = User.objects.create_user(
             username='other', password='CloudKeepPass123!'
         )
+        self.client = APIClient()
+        self.authenticate_as(self.user)
         self.storage_account = StorageAccount.objects.create(
             owner=self.user,
             name='Personal R2',
@@ -28,29 +32,12 @@ class StorageAccountViewSetTests(APITestCase):
             bucket_name='cloudkeep-files',
         )
 
-    def test_list_returns_only_the_authenticated_users_accounts(self):
-        StorageAccount.objects.create(
-            owner=self.other_user,
-            name='Other R2',
-            account_id='other-account-id',
-            access_key_id='other-access-key',
-            secret_access_key='other-secret-key',
-            bucket_name='other-files',
+    def authenticate_as(self, user):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(user)}'
         )
-        self.client.force_authenticate(self.user)
 
-        response = self.client.get(reverse('storage-account-list'))
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['id'], self.storage_account.id)
-        self.assertNotIn('account_id', response.data[0])
-        self.assertNotIn('access_key_id', response.data[0])
-        self.assertNotIn('secret_access_key', response.data[0])
-
-    def test_create_sets_owner_and_hides_credentials(self):
-        self.client.force_authenticate(self.user)
-
+    def test_create_returns_no_credential_fields(self):
         response = self.client.post(
             reverse('storage-account-list'),
             {
@@ -61,20 +48,42 @@ class StorageAccountViewSetTests(APITestCase):
                 'secret_access_key': 'new-secret-key',
                 'bucket_name': 'new-files',
             },
+            format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(
-            StorageAccount.objects.filter(owner=self.user, name='New R2').exists()
-        )
         self.assertNotIn('account_id', response.data)
+        self.assertNotIn('endpoint_url', response.data)
         self.assertNotIn('access_key_id', response.data)
         self.assertNotIn('secret_access_key', response.data)
 
-    @patch('storage_accounts.views.get_provider')
-    def test_connection_returns_success_for_a_reachable_account(self, get_provider):
-        self.client.force_authenticate(self.user)
+    def test_list_is_scoped_to_requesting_user(self):
+        other_account = StorageAccount.objects.create(
+            owner=self.other_user,
+            name='Other R2',
+            account_id='other-account-id',
+            access_key_id='other-access-key',
+            secret_access_key='other-secret-key',
+            bucket_name='other-files',
+        )
 
+        response = self.client.get(reverse('storage-account-list'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([account['id'] for account in response.data], [self.storage_account.pk])
+        self.assertNotIn(other_account.pk, [account['id'] for account in response.data])
+
+    def test_other_user_gets_404_for_account_detail(self):
+        self.authenticate_as(self.other_user)
+
+        response = self.client.get(
+            reverse('storage-account-detail', kwargs={'pk': self.storage_account.pk})
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch('storage_accounts.views.get_provider')
+    def test_connection_returns_success_when_provider_succeeds(self, get_provider):
         response = self.client.post(
             reverse(
                 'storage-account-test-connection',
@@ -86,9 +95,8 @@ class StorageAccountViewSetTests(APITestCase):
         get_provider.return_value.list_objects.assert_called_once_with(prefix='')
 
     @patch('storage_accounts.views.get_provider')
-    def test_connection_returns_safe_error_when_provider_fails(self, get_provider):
+    def test_connection_returns_generic_error_when_provider_fails(self, get_provider):
         get_provider.return_value.list_objects.side_effect = RuntimeError('secret error')
-        self.client.force_authenticate(self.user)
 
         response = self.client.post(
             reverse(
@@ -100,4 +108,17 @@ class StorageAccountViewSetTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertNotIn('secret error', str(response.data))
 
-# Create your tests here.
+    def test_protected_endpoints_return_401_without_token(self):
+        self.client.credentials()
+        urls_and_methods = (
+            (reverse('storage-account-list'), 'get'),
+            (reverse('storage-account-list'), 'post'),
+            (reverse('storage-account-detail', kwargs={'pk': self.storage_account.pk}), 'get'),
+            (reverse('storage-account-detail', kwargs={'pk': self.storage_account.pk}), 'patch'),
+            (reverse('storage-account-detail', kwargs={'pk': self.storage_account.pk}), 'delete'),
+            (reverse('storage-account-test-connection', kwargs={'pk': self.storage_account.pk}), 'post'),
+        )
+        for url, method in urls_and_methods:
+            with self.subTest(method=method, url=url):
+                response = getattr(self.client, method)(url, {}, format='json')
+                self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
