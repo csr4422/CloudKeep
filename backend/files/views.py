@@ -25,6 +25,15 @@ class FilePagination(PageNumberPagination):
     page_size = 50
 
 
+class StableOrderingFilter(filters.OrderingFilter):
+    def get_ordering(self, request, queryset, view):
+        ordering = super().get_ordering(request, queryset, view)
+        if not ordering:
+            return ordering
+        ordered_fields = {field.lstrip('-') for field in ordering}
+        return ordering if 'id' in ordered_fields else (*ordering, 'id')
+
+
 class FolderViewSet(viewsets.ModelViewSet):
     serializer_class = FolderSerializer
     permission_classes = (permissions.IsAuthenticated,)
@@ -41,7 +50,7 @@ class FolderViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(parent__isnull=True)
         elif parent is not None:
             queryset = queryset.filter(parent_id=parent)
-        return queryset
+        return queryset.order_by('name', 'id')
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -95,7 +104,7 @@ class FileViewSet(
     serializer_class = FileSerializer
     permission_classes = (permissions.IsAuthenticated,)
     pagination_class = FilePagination
-    filter_backends = (filters.SearchFilter, filters.OrderingFilter)
+    filter_backends = (filters.SearchFilter, StableOrderingFilter)
     search_fields = ('name',)
     ordering_fields = ('name', 'size_bytes', 'uploaded_at')
     http_method_names = ('get', 'patch', 'delete', 'head', 'options')
@@ -112,7 +121,7 @@ class FileViewSet(
             queryset = queryset.filter(folder__isnull=True)
         elif folder is not None:
             queryset = queryset.filter(folder_id=folder)
-        return queryset
+        return queryset.order_by('-uploaded_at', 'id')
 
     def partial_update(self, request, *args, **kwargs):
         # Keep PATCH limited to the two mutable fields, even if a client sends extra data.
