@@ -1,14 +1,38 @@
-import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { listStorageAccounts } from '@/api/storageAccounts'
 import { useAuth } from '@/auth/useAuth'
 import { Button } from '@/components/ui/button'
 
 export function WorkspacePage() {
   const { logout } = useAuth()
   const navigate = useNavigate()
+  const accountsQuery = useQuery({
+    queryKey: ['storageAccounts'],
+    queryFn: listStorageAccounts,
+  })
 
   function handleLogout() {
     logout()
     navigate('/login', { replace: true })
+  }
+
+  if (accountsQuery.isLoading) {
+    return (
+      <main className="grid min-h-svh place-items-center bg-[#f5f5f2] text-sm text-zinc-500">
+        Loading your workspace…
+      </main>
+    )
+  }
+
+  if (!accountsQuery.isError && accountsQuery.data?.length === 0) {
+    return (
+      <Navigate
+        to="/app/storage"
+        replace
+        state={{ prompt: 'Connect a storage account to start using your workspace.' }}
+      />
+    )
   }
 
   return (
@@ -23,9 +47,14 @@ export function WorkspacePage() {
           </span>
           <span className="font-semibold tracking-tight">CloudKeep</span>
         </div>
-        <Button variant="outline" className="h-10 rounded-xl bg-white" onClick={handleLogout}>
-          Sign out
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" className="h-10 rounded-xl bg-white">
+            <Link to="/app/storage">Storage accounts</Link>
+          </Button>
+          <Button variant="outline" className="h-10 rounded-xl bg-white" onClick={handleLogout}>
+            Sign out
+          </Button>
+        </div>
       </header>
       <section className="mx-auto mt-20 max-w-6xl">
         <p className="text-sm font-medium uppercase tracking-[0.18em] text-emerald-800">Workspace</p>
@@ -33,9 +62,18 @@ export function WorkspacePage() {
         <p className="mt-4 max-w-xl text-base leading-7 text-zinc-600">
           Your CloudKeep workspace is ready. Connect a storage account to get started.
         </p>
-        <div className="mt-10 rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-sm text-zinc-500">
-          Storage account setup is the next step.
-        </div>
+        {accountsQuery.isError ? (
+          <div className="mt-10 rounded-2xl border border-red-200 bg-white p-6">
+            <p className="text-sm text-red-700">Couldn’t load your storage accounts.</p>
+            <Button variant="outline" className="mt-4 rounded-xl" onClick={() => accountsQuery.refetch()}>
+              Try again
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-10 rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-sm text-zinc-500">
+            Your storage accounts are ready. File browsing is coming next.
+          </div>
+        )}
       </section>
     </main>
   )
