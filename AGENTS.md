@@ -13,16 +13,17 @@
 - Local development: PostgreSQL on host; MinIO in Docker (`ghcr.io/coollabsio/minio`, `minio-data` volume, `user` bucket); root `start.sh`, `stop.sh`, and `token.sh`
 - Frontend setup: React Router, Axios with JWT access/refresh, one-time 401 refresh with concurrent-request queue, protected routes, Tailwind, shadcn/ui
 - Frontend auth pages at `/register` and `/login`, API field errors, token storage, and protected `/app` page
+- Storage account management at `/app/storage`: list, test connection, add with provider-specific validation and automatic connection test, edit name/bucket, and confirmed delete; credentials are never returned or prefilled
+- Empty workspaces redirect to `/app/storage` with a prompt to connect an account
 - Backend CORS allows `http://localhost:5173`
 
 ## Next Immediate Step
 
 Continue the React frontend in this order:
 
-1. Storage account connection form with test connection
-2. File browser with folder navigation, breadcrumbs, list, and search
-3. Drag-and-drop upload using the three-step presigned flow; PUT must send the exact signed `Content-Type`
-4. File actions: rename, move, delete, and download
+1. File browser with folder navigation, breadcrumbs, list, and search
+2. Drag-and-drop upload using the three-step presigned flow; PUT must send the exact signed `Content-Type`
+3. File actions: rename, move, delete, and download
 
 ## Conventions
 
