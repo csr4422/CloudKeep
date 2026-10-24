@@ -71,7 +71,8 @@ export function WorkspacePage() {
           </div>
         ) : (
           <div className="mt-10 rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-sm text-zinc-500">
-            Your storage accounts are ready. File browsing is coming next.
+            <p>Your storage accounts are ready. Browse your files and folders.</p>
+            <Button asChild className="mt-4"><Link to="/app/files">Browse files</Link></Button>
           </div>
         )}
       </section>
