@@ -3,6 +3,7 @@ import { useAuth } from '@/auth/useAuth'
 import { ProtectedRoute } from '@/auth/ProtectedRoute'
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
+import { StorageAccountsPage } from '@/pages/StorageAccountsPage'
 import { WorkspacePage } from '@/pages/WorkspacePage'
 
 function HomeRedirect() {
@@ -18,6 +19,7 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/app" element={<WorkspacePage />} />
+        <Route path="/app/storage" element={<StorageAccountsPage />} />
       </Route>
       <Route path="*" element={<HomeRedirect />} />
     </Routes>
