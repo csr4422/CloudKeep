@@ -1,18 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { loginUser, registerUser } from '@/api/auth'
 import { tokenStorage } from '@/api/client'
 import { AuthContext } from '@/auth/context'
 
 export function AuthProvider({ children }) {
+  const queryClient = useQueryClient()
   const [isAuthenticated, setIsAuthenticated] = useState(
     () => Boolean(tokenStorage.getAccess()),
   )
 
   useEffect(() => {
-    const handleLogout = () => setIsAuthenticated(false)
+    const handleLogout = () => {
+      queryClient.clear()
+      setIsAuthenticated(false)
+    }
     window.addEventListener('cloudkeep:logout', handleLogout)
     return () => window.removeEventListener('cloudkeep:logout', handleLogout)
-  }, [])
+  }, [queryClient])
 
   const value = useMemo(
     () => ({
@@ -29,10 +34,11 @@ export function AuthProvider({ children }) {
       },
       logout() {
         tokenStorage.clear()
+        queryClient.clear()
         setIsAuthenticated(false)
       },
     }),
-    [isAuthenticated],
+    [isAuthenticated, queryClient],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
