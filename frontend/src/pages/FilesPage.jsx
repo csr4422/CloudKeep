@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useDropzone } from 'react-dropzone'
+import { toast } from 'sonner'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon, FileIcon, FolderIcon, SearchIcon } from 'lucide-react'
@@ -8,6 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { uploadFile, uploadErrorMessage } from '@/api/uploads'
+import { createUploadQueue, MAX_UPLOAD_SIZE } from '@/lib/uploadQueue'
+import { UploadPanel } from '@/components/UploadPanel'
 
 function LoadingRows() {
   return (
@@ -48,7 +53,7 @@ function formatDate(value) {
     : '—'
 }
 
-function FolderBrowser({ account, folder, folderLink }) {
+function FolderBrowser({ account, accountName, folder, folderLink, queue }) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -94,6 +99,23 @@ function FolderBrowser({ account, folder, folderLink }) {
     getNextPageParam: (lastPage) => lastPage.next || undefined,
     enabled: ancestorsQuery.isSuccess,
   })
+  const { getRootProps, getInputProps, open, isDragActive } = useDropzone({
+    noClick: true,
+    noKeyboard: true,
+    disabled: !ancestorsQuery.isSuccess,
+    maxSize: MAX_UPLOAD_SIZE,
+    onDrop: (accepted, rejected) => {
+      rejected.forEach(({ file, errors }) => {
+        toast.error(errors.some((error) => error.code === 'file-too-large')
+          ? `${file.name} exceeds the 5 GB upload limit.`
+          : `${file.name} could not be added to the upload queue.`)
+      })
+      queue.add(accepted, {
+        account, folder,
+        destinationLabel: `${accountName} / ${ancestorsQuery.data?.map((item) => item.name).join(' / ') || 'All files'}`,
+      })
+    },
+  })
 
   const folders = [...(foldersQuery.data || [])].sort((a, b) => a.name.localeCompare(b.name) || String(a.id).localeCompare(String(b.id)))
   if (ordering === '-name') folders.reverse()
@@ -135,9 +157,14 @@ function FolderBrowser({ account, folder, folderLink }) {
           <Input type="search" aria-label="Search files in this folder" placeholder="Search files in this folder" value={search} onChange={(event) => setSearch(event.target.value)} className="h-10 rounded-xl bg-white pl-9" />
         </div>
         {search && <Button variant="ghost" onClick={() => setSearch('')}>Clear</Button>}
+        <Button className="ml-auto" onClick={open} disabled={!ancestorsQuery.isSuccess}>Upload</Button>
       </div>
 
-      <section aria-label="Files and folders" aria-busy={loading || search !== debouncedSearch} className="mt-5 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+      <section {...getRootProps()} aria-label="Files and folders" aria-busy={loading || search !== debouncedSearch} className={`mt-5 overflow-hidden rounded-2xl border bg-white shadow-sm ${isDragActive ? 'border-emerald-600 ring-2 ring-emerald-500' : 'border-zinc-200'}`}>
+        <input {...getInputProps()} aria-label="Choose files to upload" />
+        <p className={`border-b px-5 py-3 text-sm ${isDragActive ? 'bg-emerald-50 text-emerald-900' : 'text-zinc-500'}`}>
+          {isDragActive ? 'Drop files here to upload' : 'Drop files here or use Upload. Maximum 5 GB per file.'}
+        </p>
         {ancestorsQuery.isError ? (
           <QueryError message="Couldn’t open this folder. Try again or use All files to return to the root." retry={() => ancestorsQuery.refetch()} pending={ancestorsQuery.isFetching} />
         ) : listError ? (
@@ -187,6 +214,16 @@ function FolderBrowser({ account, folder, folderLink }) {
 }
 
 export function FilesPage() {
+  const queryClient = useQueryClient()
+  const [queue] = useState(() => createUploadQueue({
+    upload: uploadFile,
+    errorMessage: uploadErrorMessage,
+    onSuccess: (item) => {
+      void queryClient.invalidateQueries({ queryKey: ['files', item.account, item.folder] })
+    },
+  }))
+  const uploads = useSyncExternalStore(queue.subscribe, queue.getSnapshot)
+  useEffect(() => () => queue.dispose(), [queue])
   const [params, setParams] = useSearchParams()
   const accountsQuery = useQuery({ queryKey: ['storageAccounts'], queryFn: listStorageAccounts })
   const accounts = accountsQuery.data || []
@@ -234,7 +271,8 @@ export function FilesPage() {
             </Select>
           </div>}
         </div>
-        {accountsQuery.isPending ? <LoadingRows /> : accountsQuery.isError ? <QueryError message="Couldn’t load storage accounts." retry={() => accountsQuery.refetch()} pending={accountsQuery.isFetching} /> : account && <FolderBrowser key={`${account.id}:${folder || 'root'}`} account={String(account.id)} folder={folder} folderLink={folderLink} />}
+        {accountsQuery.isPending ? <LoadingRows /> : accountsQuery.isError ? <QueryError message="Couldn’t load storage accounts." retry={() => accountsQuery.refetch()} pending={accountsQuery.isFetching} /> : account && <FolderBrowser key={`${account.id}:${folder || 'root'}`} account={String(account.id)} accountName={account.name} folder={folder} folderLink={folderLink} queue={queue} />}
+        <UploadPanel items={uploads} queue={queue} />
       </div>
     </main>
   )
