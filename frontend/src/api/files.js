@@ -1,5 +1,24 @@
 import { api } from '@/api/client'
 
+export async function getFileDownloadUrl(id) {
+  const { data } = await api.get(`/api/files/${encodeURIComponent(id)}/download-url/`)
+  return data
+}
+
+export async function renameFile(id, name) {
+  const { data } = await api.patch(`/api/files/files/${encodeURIComponent(id)}/`, { name })
+  return data
+}
+
+export async function moveFile(id, folder) {
+  const { data } = await api.patch(`/api/files/files/${encodeURIComponent(id)}/`, { folder })
+  return data
+}
+
+export async function deleteFile(id) {
+  await api.delete(`/api/files/files/${encodeURIComponent(id)}/`)
+}
+
 export async function listFolders({ account, folder, signal }) {
   const { data } = await api.get('/api/files/folders/', {
     params: { storage_account: account, parent: folder || 'root' },
