@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone'
 import { toast } from 'sonner'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
-import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon, FileIcon, FolderIcon, SearchIcon } from 'lucide-react'
+import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon, FolderIcon, SearchIcon } from 'lucide-react'
 import { getFolder, listFiles, listFolders } from '@/api/files'
 import { listStorageAccounts } from '@/api/storageAccounts'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { uploadFile, uploadErrorMessage } from '@/api/uploads'
 import { createUploadQueue, MAX_UPLOAD_SIZE } from '@/lib/uploadQueue'
 import { UploadPanel } from '@/components/UploadPanel'
+import { FileRow } from '@/components/FileRow'
 
 function LoadingRows() {
   return (
@@ -175,22 +176,17 @@ function FolderBrowser({ account, accountName, folder, folderLink, queue }) {
               <table className="w-full min-w-[640px] text-sm">
                 <caption className="sr-only">Folders followed by files in the current folder</caption>
                 <thead className="border-b bg-zinc-50 text-zinc-600">
-                  <tr>{sortHeader('Name', 'name')}{sortHeader('Size', 'size_bytes')}<th scope="col" className="px-5 py-3 text-left font-medium">Type</th>{sortHeader('Uploaded', 'uploaded_at')}</tr>
+                  <tr>{sortHeader('Name', 'name')}{sortHeader('Size', 'size_bytes')}<th scope="col" className="px-5 py-3 text-left font-medium">Type</th>{sortHeader('Uploaded', 'uploaded_at')}<th scope="col" className="px-3 py-3"><span className="sr-only">Actions</span></th></tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {folders.map((item) => (
                     <tr key={`folder-${item.id}`} className="hover:bg-zinc-50">
                       <td className="px-5 py-4"><Link to={folderLink(item.id)} className="flex items-center gap-3 rounded font-medium hover:underline focus-visible:outline-2"><FolderIcon className="size-5 shrink-0 text-emerald-700" aria-hidden="true" /><span className="break-all">{item.name}</span></Link></td>
-                      <td className="px-5 py-4 text-zinc-500">—</td><td className="px-5 py-4 text-zinc-500">Folder</td><td className="px-5 py-4 text-zinc-500">—</td>
+                      <td className="px-5 py-4 text-zinc-500">—</td><td className="px-5 py-4 text-zinc-500">Folder</td><td className="px-5 py-4 text-zinc-500">—</td><td />
                     </tr>
                   ))}
                   {files.map((file) => (
-                    <tr key={`file-${file.id}`}>
-                      <td className="px-5 py-4"><span className="flex items-center gap-3"><FileIcon className="size-5 shrink-0 text-zinc-400" aria-hidden="true" /><span className="break-all">{file.name}</span></span></td>
-                      <td className="whitespace-nowrap px-5 py-4 text-zinc-500">{formatSize(file.size_bytes)}</td>
-                      <td className="break-all px-5 py-4 text-zinc-500">{file.content_type || 'File'}</td>
-                      <td className="whitespace-nowrap px-5 py-4 text-zinc-500">{formatDate(file.uploaded_at)}</td>
-                    </tr>
+                    <FileRow key={file.id} file={file} account={account} size={formatSize(file.size_bytes)} date={formatDate(file.uploaded_at)} />
                   ))}
                 </tbody>
               </table>
